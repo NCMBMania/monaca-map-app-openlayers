@@ -31,20 +31,46 @@
     // MapBoxオブジェクト
     let map;
 
+    // マーカーのスタイルを定義
+    const markerStyle = new ol.style.Style({
+      image: new ol.style.Icon({
+        anchor: [0.5, 1],
+        src: 'assets/icons/marker.png',
+      }),
+    });
+    const markerStyleStation = new ol.style.Style({
+      image: new ol.style.Icon({
+        anchor: [0.5, 1],
+        src: 'assets/icons/station.png',
+      }),
+    });
+
     // 画面表示前に実行されるイベント
     $on('pageBeforeIn', async (e, page) => {
-      // MapBoxを用意
-      mapboxgl.accessToken = mapboxAccessToken;
-      map = new mapboxgl.Map({
-        container: 'map',
-        style: 'mapbox://styles/mapbox/streets-v11',
-        center: [139.7454329, 35.6585805], // 東京タワーの位置情報
-        zoom: 14
+      // OpenLayerを準備
+      map = new ol.Map({
+        target: 'map',
+        layers: [
+          new ol.layer.Tile({
+            source: new ol.source.XYZ({
+              url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+            })
+          })
+        ],
+        view: new ol.View({
+          center: ol.proj.fromLonLat([139.7454329, 35.6585805]), // 東京タワーの位置情報
+          zoom: 14,
+        })
       });
-
+      // マーカー用のVectorLayerを作成
+      const markerLayer = new ol.layer.Vector({
+        source: new ol.source.Vector(),
+      });
+      map.addLayer(markerLayer);
       // 地図をクリックした場合
       map.on('click', async e => {
-        addMarker(e.lngLat.lng, e.lngLat.lat);
+        const { coordinate } = e;
+        addMarker(coordinate);
         if (markers.length === 1) {
           // マーカーを中心に5km以内の駅をリストアップ
           searchMapPoint();
@@ -56,23 +82,25 @@
     });
 
     // マーカーを立てる処理
-    const addMarker = (lng, lat) => {
+    const addMarker = (coordinate) => {
       // すでに2つのマーカーが立っている場合は、前のものを削除する
       if (markers.length == 2) {
-        markers[0].remove();
+        map.getLayers().getArray()[1].getSource().removeFeature(markers[0]);
         markers.shift();
       }
       // マーカーを立てる
-      const marker = new mapboxgl.Marker()
-        .setLngLat([lng, lat])
-        .addTo(map);
+      const marker = new ol.Feature({
+        geometry: new ol.geom.Point(coordinate),
+      });
+      marker.setStyle(markerStyle);
+      map.getLayers().getArray()[1].getSource().addFeature(marker);
       markers.push(marker);
     }
 
     // 駅のマーカーを削除する処理
     const clearStations = () => {
       for (const marker of stationsMarkers) {
-        marker.remove();
+        map.getLayers().getArray()[1].getSource().removeFeature(marker);
       }
       stationsMarkers.splice(0, stationsMarkers.length);
     }
@@ -82,7 +110,7 @@
       // すでにある駅のマーカーを削除
       clearStations();
       // 1つ目のマーカーの位置情報を取得
-      const {lng, lat} = markers[0]._lngLat;
+      const [lng, lat] = ol.proj.toLonLat(markers[0].getGeometry().flatCoordinates);
       // NCMBの位置情報オブジェクト作成
       const geo = new ncmb.GeoPoint(lat, lng);
       // 検索するクラス（DBでいうテーブル相当）
@@ -103,7 +131,7 @@
       // マーカーをNCMBの位置情報オブジェクトにする
       const geos = [];
       for (const marker of markers) {
-        const {lng, lat} = marker._lngLat;
+        const [lng, lat] = ol.proj.toLonLat(marker.getGeometry().flatCoordinates);
         geos.push(new ncmb.GeoPoint(lat, lng));
       }
       // 検索するクラス（DBでいうテーブル相当）
@@ -120,9 +148,13 @@
     // 検索結果の駅一覧を地図上に表示
     const addStationMarkers = (stations) => {
       for (const station of stations) {
-        const marker = new mapboxgl.Marker({color: '#f00'})
-          .setLngLat([station.geo.longitude, station.geo.latitude])
-          .addTo(map);
+        // マーカー用のVectorLayerを作成
+        const coordinate = ol.proj.fromLonLat([station.geo.longitude, station.geo.latitude]);
+        const marker = new ol.Feature({
+          geometry: new ol.geom.Point(coordinate),
+        });
+        marker.setStyle(markerStyleStation);
+        map.getLayers().getArray()[1].getSource().addFeature(marker);
         stationsMarkers.push(marker)
       }
     }
@@ -130,7 +162,7 @@
     // マーカーを削除する
     const clear = () => {
       for (const marker of markers) {
-        marker.remove();
+        map.getLayers().getArray()[1].getSource().removeFeature(marker);
       }
       markers.splice(0, 2);
       // 駅のマーカーも削除

@@ -2,8 +2,6 @@ const applicationKey = 'YOUR_APPLICATION_KEY';
 const clientKey = 'YOUR_CLIENT_KEY';
 const ncmb = new NCMB(applicationKey, clientKey);
 
-const mapboxAccessToken = 'YOUR_MAPBOX_ACCESS_TOKEN';
-
 var $ = Dom7;
 
 var app = new Framework7({
